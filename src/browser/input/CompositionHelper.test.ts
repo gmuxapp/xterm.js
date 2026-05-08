@@ -234,6 +234,62 @@ describe('CompositionHelper', () => {
       }, 0);
     });
 
+    it('Should send deletes when textarea shrinks during composition (Android Gboard edit-previous-word)', (done) => {
+      // Reproduces Gboard's "edit previous word" behavior on Android. After
+      // committing "abc def" via three earlier compositions, the user
+      // backspaces; Gboard restarts composition on the prior word "def"
+      // (textarea contents already include the committed text) and shrinks
+      // the composition as the user continues to backspace. By compositionend
+      // the textarea has shrunk and the standard substring path would emit
+      // nothing, leaving the application unaware that the user deleted text.
+      textarea.value = 'abc def';
+      textarea.selectionStart = 7;
+      textarea.selectionEnd = 7;
+
+      compositionHelper.compositionstart();
+      compositionHelper.compositionupdate({ data: 'def' });
+      setTimeout(() => {
+        compositionHelper.compositionupdate({ data: 'de' });
+        textarea.value = 'abc de';
+        setTimeout(() => {
+          compositionHelper.compositionupdate({ data: '' });
+          textarea.value = 'abc ';
+          setTimeout(() => {
+            compositionHelper.compositionend();
+            setTimeout(() => {
+              // Three characters removed ("def"), nothing added.
+              assert.equal(handledText, '\x7f\x7f\x7f');
+              done();
+            }, 0);
+          }, 0);
+        }, 0);
+      }, 0);
+    });
+
+    it('Should diff replacement when textarea shrinks with new content', (done) => {
+      // Variant of the Gboard edit-previous-word case where the user
+      // partially edits the prior word: starts with "hello" (5 chars) and
+      // shrinks to "helx" (4 chars). Expect 2 backspaces (to remove "lo")
+      // followed by "x".
+      textarea.value = 'hello';
+      textarea.selectionStart = 5;
+      textarea.selectionEnd = 5;
+
+      compositionHelper.compositionstart();
+      compositionHelper.compositionupdate({ data: 'hello' });
+      setTimeout(() => {
+        compositionHelper.compositionupdate({ data: 'helx' });
+        textarea.value = 'helx';
+        setTimeout(() => {
+          compositionHelper.compositionend();
+          setTimeout(() => {
+            assert.equal(handledText, '\x7f\x7fx');
+            done();
+          }, 0);
+        }, 0);
+      }, 0);
+    });
+
     it('Should insert middle composition and subsequent input without appending existing trailing text', (done) => {
       textarea.value = '一二';
       // screenReaderMode keeps textarea content/selection for assistive technologies (eg. screen

@@ -37,6 +37,16 @@ export class CompositionHelper {
   private _compositionSuffix: string;
 
   /**
+   * Snapshot of the full textarea value at compositionstart. Used to detect
+   * Android Gboard "edit previous word" mode where backspacing committed
+   * text restarts composition on the prior word and the textarea shrinks
+   * during composition. In that case the substring-based logic in
+   * _finalizeComposition produces an empty string and silently sends nothing,
+   * leaving the application out of sync with what the user sees.
+   */
+  private _preCompositionValue: string;
+
+  /**
    * Whether a composition is in the process of being sent, setting this to false will cancel any
    * in-progress composition.
    */
@@ -64,6 +74,7 @@ export class CompositionHelper {
     this._isSendingComposition = false;
     this._compositionPosition = { start: 0, end: 0 };
     this._compositionSuffix = '';
+    this._preCompositionValue = '';
     this._dataAlreadySent = '';
   }
 
@@ -79,6 +90,7 @@ export class CompositionHelper {
     this._compositionPosition.start = Math.min(start, end);
     this._compositionPosition.end = Math.max(start, end);
     this._compositionSuffix = this._textarea.value.substring(this._compositionPosition.end);
+    this._preCompositionValue = this._textarea.value;
     this._compositionView.textContent = '';
     this._dataAlreadySent = '';
     this._compositionView.classList.add('active');
@@ -163,6 +175,7 @@ export class CompositionHelper {
         end: this._compositionPosition.end
       };
       const currentCompositionSuffix = this._compositionSuffix;
+      const currentPreCompositionValue = this._preCompositionValue;
 
       // Since composition* events happen before the changes take place in the textarea on most
       // browsers, use a setTimeout with 0ms time to allow the native compositionend event to
@@ -186,10 +199,32 @@ export class CompositionHelper {
             // if a new composition has started.
             input = this._textarea.value.substring(currentCompositionPosition.start, this._compositionPosition.start);
           } else {
+            const value = this._textarea.value;
+            // Android Gboard "edit previous word" mode: when the user
+            // backspaces past committed text, Gboard restarts composition
+            // on the prior word. As they continue backspacing, the
+            // composition data shrinks and the textarea shrinks with it.
+            // The substring-based logic below would produce an empty string
+            // (start position is now beyond value.length), so we explicitly
+            // diff the pre-composition value against the final value and
+            // emit the corresponding deletes plus any new content.
+            if (value.length < currentPreCompositionValue.length) {
+              let prefixLen = 0;
+              const max = Math.min(value.length, currentPreCompositionValue.length);
+              while (prefixLen < max && value.charCodeAt(prefixLen) === currentPreCompositionValue.charCodeAt(prefixLen)) {
+                prefixLen++;
+              }
+              const removed = currentPreCompositionValue.length - prefixLen;
+              const added = value.substring(prefixLen);
+              const diff = C0.DEL.repeat(removed) + added;
+              if (diff.length > 0) {
+                this._coreService.triggerDataEvent(diff, true);
+              }
+              return;
+            }
             // Keep support for non-composition characters typed immediately after composition end
             // while avoiding re-sending the trailing text that was already present
             // before composition started.
-            const value = this._textarea.value;
             const valueEnd = currentCompositionSuffix.length > 0 && value.endsWith(currentCompositionSuffix)
               ? value.length - currentCompositionSuffix.length
               : value.length;
