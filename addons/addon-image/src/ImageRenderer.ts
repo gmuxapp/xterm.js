@@ -129,13 +129,33 @@ export class ImageRenderer extends Disposable implements IDisposable {
   }
 
   /**
-   * Current cell size in device pixels (accounts for devicePixelRatio).
+   * Current cell size in device pixels.
+   *
+   * Image tiling, placement and draw coordinates all work in device pixels so
+   * that images render 1:1 into the device-pixel backing store (crisp on
+   * HiDPI, no browser upscaling). The decoders are responsible for rasterizing
+   * their sources at device resolution to match — see `ImageRenderer.dpr` and
+   * each handler's resize step. The protocol invariant “1 image pixel = 1 CSS
+   * pixel” is preserved by scaling the requested CSS size by `dpr` in the
+   * decoders.
    */
   public get cellSize(): ICellSize {
     return {
       width: this.dimensions?.device.cell.width || -1,
       height: this.dimensions?.device.cell.height || -1
     };
+  }
+
+  /**
+   * Device-pixel ratio for the current metrics, derived from the cell size so
+   * it matches xterm's own rounding of device pixels. Used by the decoders to
+   * rasterize CSS-sized images at device resolution. Falls back to 1 when
+   * metrics are not available yet.
+   */
+  public get dpr(): number {
+    const css = this.dimensions?.css.cell.width || 0;
+    const dev = this.dimensions?.device.cell.width || 0;
+    return css > 0 && dev > 0 ? dev / css : 1;
   }
 
   /**
@@ -157,6 +177,8 @@ export class ImageRenderer extends Disposable implements IDisposable {
    * Clear whole image canvas.
    */
   public clearAll(layer?: ImageLayer): void {
+    // Clear the whole backing store. Use `ctx.canvas.*` (not `dimensions`,
+    // which dereferences the terminal and is unavailable during dispose).
     if (!layer || layer === 'top') {
       const ctx = this._layers.get('top');
       ctx?.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);

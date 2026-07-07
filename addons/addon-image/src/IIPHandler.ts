@@ -103,7 +103,12 @@ export class IIPHandler implements IOscHandler, IResetHandler {
             w = this._metrics.width;
             h = this._metrics.height;
             if (cond = w && h && w * h < this._opts.pixelLimit) {
-              [w, h] = this._resize(w, h).map(Math.floor);
+              // `_resize` yields the CSS display size (image px == CSS px).
+              // Rasterize at device resolution so the image is crisp on HiDPI:
+              // the renderer tiles/draws in device pixels, and decoding the
+              // original bytes straight to device size preserves detail.
+              const dpr = this._renderer.dpr;
+              [w, h] = this._resize(w, h).map(v => Math.floor(v * dpr));
               cond = w && h && w * h < this._opts.pixelLimit;
             }
           }

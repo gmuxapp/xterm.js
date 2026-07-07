@@ -662,6 +662,20 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
       }
 
       const zIndex = cmd.zIndex ?? 0;
+      // All sizing above is in CSS pixels (image px == CSS px). The renderer
+      // tiles/draws in device pixels, so rasterize the composed bitmap at
+      // device resolution to keep the displayed size correct and the backing
+      // store crisp on HiDPI. Cell-span math (imgCols/imgRows) is unchanged;
+      // ceil(width*dpr / deviceCell) == ceil(width / cssCell). No-op at DPR 1.
+      const dpr = this._renderer.dpr;
+      if (dpr !== 1) {
+        const scaled = await createImageBitmap(bitmap, {
+          resizeWidth: Math.max(1, Math.round(bitmap.width * dpr)),
+          resizeHeight: Math.max(1, Math.round(bitmap.height * dpr))
+        });
+        bitmap.close();
+        bitmap = scaled;
+      }
       this._kittyStorage.addImage(image.id, bitmap, true, layer, zIndex);
       bitmap = undefined;  // ownership transferred to storage
 
