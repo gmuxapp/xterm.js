@@ -165,7 +165,11 @@ export class Viewport extends Disposable {
     }
     this._queuedAnimationFrame = this._renderService.addRefreshCallback(() => {
       this._queuedAnimationFrame = undefined;
-      this._sync(this._latestYDisp);
+      // Sync against the buffer's live ydisp. _latestYDisp only tracks
+      // viewport-driven scrolls, so after output-driven scrolling, a reflow
+      // (resize) or ED3 it is stale; syncing to it would strand the scroll
+      // position at an old offset (xtermjs/xterm.js#6172).
+      this._sync();
     });
   }
 
@@ -191,8 +195,11 @@ export class Viewport extends Disposable {
     this._suppressOnScrollHandler = false;
 
     // If ydisp has been changed by some other component (input/buffer), then stop animating smooth
-    // scroll and scroll there immediately.
+    // scroll and scroll there immediately. Record the synced row: _latestYDisp is otherwise only
+    // updated by viewport-driven scrolls, and a stale value that later coincides with ydisp would
+    // skip this update and strand the scroll position on an old offset.
     if (ydisp !== this._latestYDisp) {
+      this._latestYDisp = ydisp;
       this._scrollableElement.setScrollPosition({
         scrollTop: ydisp * this._renderService.dimensions.css.cell.height
       });
